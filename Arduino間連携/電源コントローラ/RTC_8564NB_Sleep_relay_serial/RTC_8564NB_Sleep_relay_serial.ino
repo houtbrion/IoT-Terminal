@@ -11,10 +11,13 @@ unsigned long bootTime;
 
 #define DEBUG
 
+#define RESET
+
 #define ARDUINO_SLEEP
 #define AVR
 #define SERIAL_COM
 //#define SERIAL_UPLOAD
+//#define XBEE_SLEEP
 
 #ifdef SERIAL_COM
 #define SERIAL_COM_RX 10
@@ -22,8 +25,11 @@ unsigned long bootTime;
 #ifdef SERIAL_UPLOAD
 #define SERIAL_UPLOAD_RX 12
 #define SERIAL_UPLOAD_TX 13
-#endif
-#endif
+#ifdef XBEE_SLEEP
+#define XBEE_SLEEP_PIN 4
+#endif /* XBEE_SLEEP */
+#endif /* SERIAL_UPLOAD */
+#endif /* SERIAL_COM */
 
 #if defined(SERIAL_COM) || defined(SERIAL_UPLOAD)
 #include <SoftwareSerial.h>
@@ -95,12 +101,15 @@ SoftwareSerial serialUpload(SERIAL_UPLOAD_RX, SERIAL_UPLOAD_TX); // RX, TX
 #endif
 
 #define SHUTDOWN_SIGNAL 9
-#define RELAY_SIGNAL 4
+#define RELAY_SIGNAL 6
+#ifdef RESET
+#define RESET_SIGNAL 5
+#endif /* RESET */
 bool relayFlag=false;
 /*
  * 端末が眠る期間の指定
  */
-#define SLEEP_DURATION 30 //単位の倍数
+#define SLEEP_DURATION 45 //単位の倍数
 //#define SLEEP_UNIT 0 // 244.14us単位
 //#define SLEEP_UNIT 1 //15.625ms単位
 #define SLEEP_UNIT 2 //秒単位
@@ -298,8 +307,11 @@ void setup()
   byte tm[7] ;
   int configFlag=0;
   unsigned long currentTime;
-  pinMode( PIN_NUMBER, INPUT);    // RTCからの割込みを読むのに利用
+  pinMode(PIN_NUMBER, INPUT);    // RTCからの割込みを読むのに利用
   pinMode(SHUTDOWN_SIGNAL,INPUT);
+#ifdef RESET
+  pinMode(RESET_SIGNAL,OUTPUT);
+#endif /* RESET */
   Serial.begin(9600) ;                    // シリアル通信の初期化
   //ans = skRTC.begin(0,12,1,10,2,15,30,0) ;  // 2012/01/10 火 15:30:00 でRTCを初期化する
   ans = skRTC.begin(PIN_NUMBER,INT_NUMBER,InterRTC,12,1,10,2,15,30,0) ;  // 2012/01/10 火 15:30:00 でRTCを初期化する
@@ -338,7 +350,23 @@ void setup()
   }
   pinMode(RELAY_SIGNAL,OUTPUT);
   digitalWrite(RELAY_SIGNAL,LOW);
+#ifdef RESET
+  digitalWrite(RESET_SIGNAL,HIGH);
+#endif /* RESET */
 }
+/*******************************************************************************
+* Xbee関連の処理 *
+*******************************************************************************/
+#ifdef XBEE_SLEEP
+void wakeupXbee(){
+  pinMode(XBEE_SLEEP_PIN, OUTPUT);
+  digitalWrite(XBEE_SLEEP_PIN, LOW);
+}
+void sleepXbee(){
+  pinMode(XBEE_SLEEP_PIN, INPUT); // put pin in a high impedence state
+  digitalWrite(XBEE_SLEEP_PIN, HIGH);
+}
+#endif /* XBEE_SLEEP */
 /*******************************************************************************
 * 本来の仕事                                                                   *
 *******************************************************************************/
@@ -347,6 +375,9 @@ bool doWork(){
   unsigned long startTime;
   //char buff[MAX_BUFFER_LENGTH];
   int configFlag=0;
+#ifdef XBEE_SLEEP
+  wakeupXbee();
+#endif /* XBEE_SLEEP */
   //int counter=0;
   //memset(buff,0,MAX_BUFFER_LENGTH);
   startTime=now();
@@ -354,6 +385,9 @@ bool doWork(){
   while(configFlag==0) {
     currentTime=now();
     if ((currentTime - startTime) > WORK_TIMER_THRESHOLD) {
+#ifdef XBEE_SLEEP
+      sleepXbee();
+#endif /* XBEE_SLEEP */
       return false;
     }
     if (serialCom.available()) {
@@ -367,6 +401,9 @@ bool doWork(){
       configFlag=2;
     }
   }
+#ifdef XBEE_SLEEP
+  sleepXbee();
+#endif /* XBEE_SLEEP */
   return true;
 }
 /*******************************************************************************
@@ -389,22 +426,30 @@ void loop()
     skRTC.StopTimer();
     Serial.println("Relay ON");
     digitalWrite(RELAY_SIGNAL,HIGH);
+#ifdef RESET
+    delay(100);
+    digitalWrite(RESET_SIGNAL,LOW);
+    delay(100);
+    digitalWrite(RESET_SIGNAL,HIGH);
+#endif RESET
     relayFlag = true;
   }
 #ifdef SERIAL_COM
   if (!doWork()) {
+    Serial.println("client work result timeout!");
+    digitalWrite(RELAY_SIGNAL,LOW);
+    return;
+  }else{
     digitalWrite(RELAY_SIGNAL,LOW);
     return;
   }
 #else
-  skRTC.rTime(tm) ;                         // RTCから現在の日付と時刻を読込む
-  skRTC.cTime(tm,(byte *)buf) ;             // 日付と時刻を文字列に変換する
-  Serial.println(buf) ;                   // シリアルモニターに表示
-#endif
   int loopCounter=0;
+  delay(100);
 CheckRelay:
   loopCounter++;
-  if (loopCounter > 10000){
+  if (loopCounter > 100000){
+    Serial.println("shutdown signal timeout!");
     digitalWrite(RELAY_SIGNAL,LOW);
     return;
   }
@@ -419,6 +464,7 @@ CheckRelay:
         Serial.println(" shutdown");
         digitalWrite(RELAY_SIGNAL,LOW);
         relayFlag=false;
+        //return;
       }
     } else {
       //Serial.println(" shutdown count reset");
@@ -426,10 +472,13 @@ CheckRelay:
       goto CheckRelay;
     }
   }
+#endif
 }
 
 #ifdef ARDUINO_SLEEP
 void goodNight(int i) {
+  skRTC.InterFlag = 0 ;                // 割込みフラグをクリアする
+  digitalWrite(RELAY_SIGNAL,LOW);
   Serial.println(F("  Good Night"));
   delay(100);
   noInterrupts();
