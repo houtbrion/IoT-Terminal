@@ -15,8 +15,7 @@
 #define RESET              // 夜中に再起動
 #define ARDUINO_SLEEP      // 待機中は低電力状態に設定
 #define SERIAL_COM         // センサ処理の結果をシリアルで外部に出力
-#define XBEE_SLEEP         // Xbeeを使う場合に，寝ているXbeeを寝起きさせる処理を行う場合
-#define USE_SD             // センサ処理の結果をSDカードに保存する
+//#define USE_SD             // センサ処理の結果をSDカードに保存する
 
 /**********************************
  * ここから，センサ関係処理の定義
@@ -64,15 +63,6 @@ void getSensorValue(char * buff){
 #endif /* DHT_SENSOR */
 }
 
-/**********************************
- * 端末が眠る期間の定義
- **********************************/
-#define SLEEP_DURATION 30     //単位の倍数
-//#define SLEEP_UNIT 0          // 244.14us単位
-//#define SLEEP_UNIT 1          //15.625ms単位
-#define SLEEP_UNIT 2          //秒単位
-//#define SLEEP_UNIT 3          //分単位
-
  /**********************************
  * ピン配置の設定
  **********************************/
@@ -84,53 +74,27 @@ void getSensorValue(char * buff){
 #define SERIAL_COM_TX 6
 #endif /* SERIAL_COM */
 
-#ifdef XBEE_SLEEP            // Xbeeを使う場合のXbeeのスリープ端子の指定
-#define XBEE_SLEEP_PIN 4
-#endif /* XBEE_SLEEP */
-
-/* RTCからの割り込みを受ける端子と割り込み番号の指定                  */
-//
-// Mega2560の割込み
-//
-//#define INT_NUMBER 0
-//#define PIN_NUMBER 21
-//#define INT_NUMBER 1
-//#define PIN_NUMBER 20
-//#define INT_NUMBER 2
-//#define PIN_NUMBER 19
-//#define INT_NUMBER 3
-//#define PIN_NUMBER 18
-//#define INT_NUMBER 4
-//#define PIN_NUMBER 2
-//#define INT_NUMBER 5
-//#define PIN_NUMBER 3
-//
-// UNOの割り込み
-//
-#define INT_NUMBER 0
-#define PIN_NUMBER 2
-//#define INT_NUMBER 1
-//#define PIN_NUMBER 3
-//
-// Leonardoのピン配置
-//
-//#define INT_NUMBER 0
-//#define PIN_NUMBER 3
-//#define INT_NUMBER 1
-//#define PIN_NUMBER 2
-//#define INT_NUMBER 2
-//#define PIN_NUMBER 0
-//#define INT_NUMBER 3
-//#define PIN_NUMBER 1
-//
-// M0 pro http://www.geocities.jp/zattouka/GarageHouse/micon/Arduino/Zero/gaiyo.htm
-//
-//#define INT_NUMBER 9
-//#define PIN_NUMBER 3
-//#define INT_NUMBER 6
-//#define PIN_NUMBER 8
+#define XBEE_ON_PIN 3            // Xbeeを使う場合のXbeeのON/SLEEP端子の指定
+#define XBEE_ON_INT 1            // Xbeeから起こされる場合の割り込み番号
 
 
+/***********************************************************************************
+  Arduinoの割り込み番号と対応するピン番号
+---------+-----------------------------+
+         |        割り込み番号         |
+ 機種名  | 00 | 01 | 02 | 03 | 04 | 05 |
+---------+----+----+----+----+----+----+
+UNO      |  2 |  3 |    |    |    |    |
+---------+----+----+----+----+----+----+
+Mega     | 21 | 20 | 19 | 18 |  2 |  3 |
+---------+----+----+----+----+----+----+
+Leonardo |  3 |  2 |  0 |  1 |    |    |
+---------+----+----+----+----+----+----+
+
+参考情報 : M0/M0 Proは以下のURLを参照
+・http://www.geocities.jp/zattouka/GarageHouse/micon/Arduino/Zero/gaiyo.htm
+
+***********************************************************************************/
 /**********************************
  *
  * ここまで
@@ -139,7 +103,7 @@ void getSensorValue(char * buff){
 
 #define AVR  /* AVR搭載機対応 */
 
-#define XBEE_DELAY 2000
+//#define XBEE_DELAY 2000
 
 #include <Wire.h>
 #include <skRTClib.h>
@@ -214,24 +178,31 @@ SdFile file;  // Log file.
 
 skRTClib skRTC = skRTClib() ;             // Preinstantiate Objects
 
+/**********************************
+ * 割り込み関係
+ **********************************/
+ 
+volatile boolean xbeeInter = false;
 /*
  * RTC(CLKOUT)からの外部割込みで実行される関数
  */
-void InterRTC()
+void InterXbee()
 {
-  skRTC.InterFlag = 1 ;
+  xbeeInter = true;
 }
 
-
-/*******************************************************************************
-*  reboot                                                                      *
-*******************************************************************************/
+/**********************************
+ * reboot
+ **********************************/
 void reboot() {
 #ifdef AVR
   asm volatile ("  jmp 0");
 #endif /* AVR */
 }
 
+/**********************************
+ * MCUの省電力モードへの移行処理
+ **********************************/
 #ifdef ARDUINO_SLEEP
 void goodNight(int i) {
 #ifdef DEBUG
@@ -246,9 +217,9 @@ void goodNight(int i) {
   sleep_disable();
 }
 #endif
-/*******************************************************************************
-*  時刻を設定する対話処理                                                      *
-*******************************************************************************/
+/**********************************
+ * 時刻を設定する対話処理
+ **********************************/
 void shell(){
   byte tm[7] ;
   unsigned long currentTime;
@@ -390,8 +361,11 @@ again:
   bootTime=now();
 }
 
-
 #ifdef USE_SD
+/**********************************
+ * データのSDへの書き込み
+ **********************************/
+
 // Log a data record.
 void logData(int data) {
   file.write(data);
@@ -400,8 +374,9 @@ void logData(int data) {
   }
 }
 
-
-// ログファイルの数のチェック
+/**********************************
+ * ログファイルの数のチェック
+ **********************************/
 int searchLogFile(){
   const uint8_t BASE_NAME_SIZE = sizeof(FILE_BASE_NAME) - 1;
   char fileName[13] = FILE_BASE_NAME "00.txt";
@@ -428,7 +403,9 @@ int searchLogFile(){
 #endif
   return(lastFileNumber);
 }
-// logローテーション
+/**********************************
+ * ログローテーション
+ **********************************/
 void logRotation(int num){
   const uint8_t BASE_NAME_SIZE = sizeof(FILE_BASE_NAME) - 1;
   char srcfileName[13] = FILE_BASE_NAME "00.txt";
@@ -471,7 +448,9 @@ void logRotation(int num){
     counter--;
   }
 }
-// ログファイルのオープン
+/**********************************
+ * ログファイルのオープン
+ **********************************/
 void openLogFile(){
   int lastNumber=0;
   const uint8_t BASE_NAME_SIZE = sizeof(FILE_BASE_NAME) - 1;
@@ -489,22 +468,23 @@ void openLogFile(){
   file.flush();
 }
 #endif /* USE_SD */
-/*******************************************************************************
-*  電源起動時とリセットの時だけのみ処理される関数(初期化と設定処理)            *
-*******************************************************************************/
+
+/**********************************
+ * 電源起動時とリセットの時だけのみ処理される関数(初期化と設定処理)
+ **********************************/
 void setup()
 {
   int ans ;
   byte tm[7] ;
   int configFlag=0;
   unsigned long currentTime;
-  pinMode(PIN_NUMBER, INPUT);    // RTCからの割込みを読むのに利用
+  pinMode(XBEE_ON_PIN, INPUT);    // Xbeeからの割り込みの受信設定
+  attachInterrupt(XBEE_ON_INT, InterXbee, RISING);
 
   Serial.begin(9600) ;                    // シリアル通信の初期化
   setupSensor();
 
-
-  ans = skRTC.begin(PIN_NUMBER,INT_NUMBER,InterRTC,12,1,10,2,15,30,0) ;  // 2012/01/10 火 15:30:00 でRTCを初期化する
+  ans = skRTC.begin(0,0,NULL,12,1,10,2,15,30,0) ;  // 2012/01/10 火 15:30:00 でRTCを初期化するが，割り込みは設定しない
 #ifdef DEBUG
   if (ans == 0) {
     Serial.println(F("Successful initialization of the RTC")) ;// 初期化成功
@@ -559,24 +539,10 @@ void setup()
     }
   }
 }
-/*******************************************************************************
-* Xbee関連の処理 *
-*******************************************************************************/
-#ifdef XBEE_SLEEP
-void wakeupXbee(){
-  pinMode(XBEE_SLEEP_PIN, OUTPUT);
-  digitalWrite(XBEE_SLEEP_PIN, LOW);
-  delay(XBEE_DELAY);
-}
-void sleepXbee(){
-  delay(XBEE_DELAY);
-  pinMode(XBEE_SLEEP_PIN, INPUT); // put pin in a high impedence state
-  digitalWrite(XBEE_SLEEP_PIN, HIGH);
-}
-#endif /* XBEE_SLEEP */
-/*******************************************************************************
-* 本来の仕事                                                                   *
-*******************************************************************************/
+
+/**********************************
+ * 本来の仕事
+ **********************************/
 void doWork(){
   byte tm[7] ; 
   char tbuff[TIME_BUFF_MAX] ;
@@ -590,27 +556,21 @@ void doWork(){
   Serial.println(buff);
 #endif /* DEBUG || MIN_LOG */
 #ifdef SERIAL_COM
-#ifdef XBEE_SLEEP
-  wakeupXbee();
-#endif /* XBEE_SLEEP */
   serialCom.println(buff);
-#ifdef XBEE_SLEEP
-  sleepXbee();
-#endif /* XBEE_SLEEP */
 #endif /* SERIAL_COM */
 #ifdef USE_SD
   file.println(buff);
   file.flush();
 #endif /* USE_SD */
 }
-/*******************************************************************************
-*  繰り返し実行される処理の関数(メインの処理)                                  *
-*******************************************************************************/
+
+/**********************************
+ * 繰り返し実行される処理の関数(メインの処理)
+ **********************************/
 void loop()
 {
   byte tm[7] ; 
   char tbuff[TIME_BUFF_MAX] ;
-  //char buff[BUFF_MAX];
 
 #ifdef RESET
 if ((1==hour())&&(REBOOT_THRESHOLD < (now() - bootTime))){ // 稼働時間が1時間以上で，夜中一時だったらリブート
@@ -621,18 +581,17 @@ if ((1==hour())&&(REBOOT_THRESHOLD < (now() - bootTime))){ // 稼働時間が1�
   }
 #endif /* RESET */
 #ifdef ARDUINO_SLEEP
-  skRTC.SetTimer(SLEEP_UNIT,SLEEP_DURATION) ;
   goodNight(STANDBY_MODE);// 端末を眠らせる
-#else
-  delay(5000);
 #endif
-  if (skRTC.InterFlag == 1) {// 割込みが発生したか？
-    skRTC.InterFlag = 0 ;                // 割込みフラグをクリアする
+  if (xbeeInter) {
+    xbeeInter = false;
 #ifdef DEBUG
     Serial.println(F("Interupt and wake up!"));
 #endif /* DEBUG */
-    skRTC.StopTimer();
+    byte tm[7] ;  //内部の時計をRTCと合わせる
+    skRTC.rTime(tm) ;
+    setTime(skRTC.bcd2bin(tm[2]),skRTC.bcd2bin(tm[1]),skRTC.bcd2bin(tm[0]),skRTC.bcd2bin(tm[3]),skRTC.bcd2bin(tm[5]),skRTC.bcd2bin(tm[6]));
+    doWork();
   }
-  doWork();
 }
 
