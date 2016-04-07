@@ -16,7 +16,7 @@
 #define ARDUINO_SLEEP      // 待機中は低電力状態に設定
 #define SERIAL_COM         // センサ処理の結果をシリアルで外部に出力
 #define XBEE_SLEEP         // Xbeeを使う場合に，寝ているXbeeを寝起きさせる処理を行う場合
-//#define USE_SD             // センサ処理の結果をSDカードに保存する
+#define USE_SD             // センサ処理の結果をSDカードに保存する
 
 /**********************************
  * ここから，センサ関係処理の定義
