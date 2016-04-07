@@ -92,7 +92,7 @@ void setup() {
     sd.initErrorHalt();
   }
   if (!file.open(LOG_FILE_NAME, FILE_WRITE)) {
- #ifdef DEBUG
+#ifdef DEBUG
     Serial.println("file.open error");
 #endif /* DEBUG */
     serialCom.println("file.open error");

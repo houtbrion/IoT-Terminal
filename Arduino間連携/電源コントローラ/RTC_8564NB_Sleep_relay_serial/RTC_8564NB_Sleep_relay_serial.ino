@@ -130,7 +130,8 @@ bool relayFlag=false;
 //#define TERMINATE_CHAR LINE_FEED  //LF
 
 // その他一般的な定数の定義
-#define BUFF_MAX 256
+#define BUFF_MAX 1024
+#define TIME_BUFF_MAX 256
 
 skRTClib skRTC = skRTClib() ;             // Preinstantiate Objects
 
@@ -272,13 +273,13 @@ again:
   }
   Serial.println("Let us go");
   //
-  char buff[BUFF_MAX] ;
+  char tbuff[TIME_BUFF_MAX] ;
   int ans = skRTC.sTime((byte)(yearVal-2000),(byte)monthVal,(byte)dayVal,(byte)wDayVal,(byte)hourVal,(byte)minVal,(byte)secVal);
   if (ans == 0) {
     Serial.println("RTC configuration successfull") ;// 初期化成功
     skRTC.rTime(tm) ;                         // RTCから現在の日付と時刻を読込む
-    skRTC.cTime(tm,(byte *)buff) ;             // 日付と時刻を文字列に変換する
-    Serial.println(buff) ;                   // シリアルモニターに表示
+    skRTC.cTime(tm,(byte *)tbuff) ;             // 日付と時刻を文字列に変換する
+    Serial.println(tbuff) ;                   // シリアルモニターに表示
   } else {
     Serial.print("RTC configuration failure. ans=") ; // 初期化失敗
     Serial.println(ans) ;
@@ -329,9 +330,9 @@ void setup()
 #endif
 #endif
   skRTC.rTime(tm) ;                        // RTCから現在の日付と時刻を読込む
-  char buff[BUFF_MAX] ;
-  skRTC.cTime(tm,(byte *)buff) ;             // 日付と時刻を文字列に変換する
-  Serial.println(buff) ;                   // シリアルモニターに表示
+  char tbuff[TIME_BUFF_MAX] ;
+  skRTC.cTime(tm,(byte *)tbuff) ;             // 日付と時刻を文字列に変換する
+  Serial.println(tbuff) ;                   // シリアルモニターに表示
   setTime(skRTC.bcd2bin(tm[2]),skRTC.bcd2bin(tm[1]),skRTC.bcd2bin(tm[0]),skRTC.bcd2bin(tm[3]),skRTC.bcd2bin(tm[5]),skRTC.bcd2bin(tm[6]));
   bootTime=now();
   Serial.print(F("Current system time : ")) ;
