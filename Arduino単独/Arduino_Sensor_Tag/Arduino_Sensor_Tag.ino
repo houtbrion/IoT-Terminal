@@ -17,6 +17,40 @@
 #define SERIAL_COM         // センサ処理の結果をシリアルで外部に出力
 //#define USE_SD             // センサ処理の結果をSDカードに保存する
 
+ /**********************************
+ * 接続するピン関係の番号の設定
+ **********************************/
+ 
+#define SD_CHIP_SELECT 8     // sparcfunのマイクロSDシールドのチップセレクト用のピンは8番ピン
+
+#ifdef SERIAL_COM            // Xbee等をシリアルに接続してセンサの処理結果を出力する場合のシリアル接続の端子番号
+#define SERIAL_COM_RX 5
+#define SERIAL_COM_TX 6
+#endif /* SERIAL_COM */
+
+#define XBEE_ON_PIN 3        // Xbeeを使う場合のXbeeのON/SLEEP端子の指定
+#define XBEE_ON_INT 1        // Xbeeから起こされる場合の割り込み番号
+#define XBEE_ASSOCIATE 9     // Xbeeがネットに接続されているか否かを示すピン
+#define XBEE_RSSI 10         // Xbeeの電波の受信強度
+
+#define DHT_PIN 7            // DHTシリーズの温湿度センサを接続するピン番号
+/***********************************************************************************
+  Arduinoの割り込み番号と対応するピン番号
+---------+-----------------------------+
+         |        割り込み番号         |
+ 機種名  | 00 | 01 | 02 | 03 | 04 | 05 |
+---------+----+----+----+----+----+----+
+UNO      |  2 |  3 |    |    |    |    |
+---------+----+----+----+----+----+----+
+Mega     | 21 | 20 | 19 | 18 |  2 |  3 |
+---------+----+----+----+----+----+----+
+Leonardo |  3 |  2 |  0 |  1 |    |    |
+---------+----+----+----+----+----+----+
+
+参考情報 : M0/M0 Proは以下のURLを参照
+・http://www.geocities.jp/zattouka/GarageHouse/micon/Arduino/Zero/gaiyo.htm
+
+***********************************************************************************/
 /**********************************
  * ここから，センサ関係処理の定義
  *  注意事項 :
@@ -29,7 +63,6 @@
 
 
 #ifdef DHT_SENSOR
-#define DHT_PIN 3
 #include "DHT.h"
 DHT dht;
 #endif /* DHT_SENSOR */
@@ -63,38 +96,7 @@ void getSensorValue(char * buff){
 #endif /* DHT_SENSOR */
 }
 
- /**********************************
- * ピン配置の設定
- **********************************/
- 
-#define SD_CHIP_SELECT 8     // sparcfunのマイクロSDシールドのチップセレクト用のピンは8番ピン
 
-#ifdef SERIAL_COM            // Xbee等をシリアルに接続してセンサの処理結果を出力する場合のシリアル接続の端子番号
-#define SERIAL_COM_RX 5
-#define SERIAL_COM_TX 6
-#endif /* SERIAL_COM */
-
-#define XBEE_ON_PIN 3            // Xbeeを使う場合のXbeeのON/SLEEP端子の指定
-#define XBEE_ON_INT 1            // Xbeeから起こされる場合の割り込み番号
-
-
-/***********************************************************************************
-  Arduinoの割り込み番号と対応するピン番号
----------+-----------------------------+
-         |        割り込み番号         |
- 機種名  | 00 | 01 | 02 | 03 | 04 | 05 |
----------+----+----+----+----+----+----+
-UNO      |  2 |  3 |    |    |    |    |
----------+----+----+----+----+----+----+
-Mega     | 21 | 20 | 19 | 18 |  2 |  3 |
----------+----+----+----+----+----+----+
-Leonardo |  3 |  2 |  0 |  1 |    |    |
----------+----+----+----+----+----+----+
-
-参考情報 : M0/M0 Proは以下のURLを参照
-・http://www.geocities.jp/zattouka/GarageHouse/micon/Arduino/Zero/gaiyo.htm
-
-***********************************************************************************/
 /**********************************
  *
  * ここまで
@@ -103,7 +105,11 @@ Leonardo |  3 |  2 |  0 |  1 |    |    |
 
 #define AVR  /* AVR搭載機対応 */
 
-//#define XBEE_DELAY 2000
+#define XBEE_DELAY 2000
+#define BUFF_MAX 512
+#define TIME_BUFF_MAX 256
+#define VAL_LENGTH_MAX 200
+#define MAX_SLEEP 10000
 
 #include <Wire.h>
 #include <skRTClib.h>
@@ -112,9 +118,7 @@ Leonardo |  3 |  2 |  0 |  1 |    |    |
 /* 時計関係 */
 #include <Time.h>
 unsigned long bootTime;
-#define TIME_BUFF_MAX 256
 
-#define MAX_SLEEP 10000
 
 #ifdef SERIAL_COM
 #include <SoftwareSerial.h>
@@ -141,7 +145,7 @@ SdFile file;  // Log file.
 #define SDCARD_SPEED SPI_HALF_SPEED  // 安全のため，低速モードで動作させる場合
 //#define SDCARD_SPEED SPI_FULL_SPEED  // 性能重視の場合
 #endif /* USE_SD */
-#define BUFF_MAX 512
+
 
 
 #ifdef ARDUINO_SLEEP
@@ -480,6 +484,8 @@ void setup()
   unsigned long currentTime;
   pinMode(XBEE_ON_PIN, INPUT);    // Xbeeからの割り込みの受信設定
   attachInterrupt(XBEE_ON_INT, InterXbee, RISING);
+  pinMode(XBEE_ASSOCIATE, INPUT); // Xbeeがネットワークにつながっているか否かを示すピン
+  pinMode(XBEE_RSSI,INPUT); // Xbeeの電波強度
 
   Serial.begin(9600) ;                    // シリアル通信の初期化
   setupSensor();
@@ -548,6 +554,8 @@ void doWork(){
   char tbuff[TIME_BUFF_MAX] ;
   char buff[BUFF_MAX];
   char sensorVal[BUFF_MAX];
+  //char associateVal[VAL_LENGTH_MAX];
+  //char rssiVal[VAL_LENGTH_MAX];
   skRTC.rTime(tm);
   skRTC.cTime(tm,(byte *)tbuff);
   getSensorValue(sensorVal);
@@ -557,6 +565,17 @@ void doWork(){
 #endif /* DEBUG || MIN_LOG */
 #ifdef SERIAL_COM
   serialCom.println(buff);
+  int associate = digitalRead(XBEE_ASSOCIATE);
+  //if (associate == HIGH) {
+  //  Serial.println("XBEE associate = HIGH");
+  //} else {
+  //  Serial.println("XBEE associate = LOW");
+  //}
+  unsigned long rssi = pulseIn(XBEE_RSSI,LOW,200);
+  //ultoa(rssi, rssiVal, 10);
+  //sprintf(buff, " %s : XBEE Associate = %s , RSSI = %s\n",tbuff,associateVal,rssiVal);
+  
+  //Serial.println(buff);
 #endif /* SERIAL_COM */
 #ifdef USE_SD
   file.println(buff);
