@@ -1,106 +1,204 @@
-/*
- * シリアルを用いて，端末のシリアルポートからの出力をSDカードに保存するプログラム
- * 定期的にSHTもしくはDHTの温度・湿度センサの測定結果(温度と湿度)もログと共に，保存する
- */
+/**********************************
+ *
+ * 周期的に起きて，センサを読み取る
+ * 端末プログラムのテンプレート
+ *
+ **********************************/
+ 
+ 
+/**********************************
+ * 利用する機種の選択
+ **********************************/
+//#define AVR  /* AVR搭載機対応 Arduino uno, Mega 等 */
+#define GR_KURUMI  /* ルネサスGR-kurumi */
 
-// 各種機能のON/OFF
-#define DEBUG // ONにするとシリアルに実行中のログメッセージが出力される
-#define DEBUG_CHIP_SELECT  // SPI通信のデバッグ用
-//#define UTC // RTCに入れる時刻はUTCかJSTか?
-#define USE_INTERNAL_TIMER // RTCの利用は端末起動時に限定し，以後は内部の時計を利用
-#define LED_ON_WRITE // 温度計測の時のみ光る
-#define LED_ALWAYS_ON_WRITE // 書き込み時は常時光る
-//#define USE_SOFT_SERIAL
+ /**********************************
+ * どの機能を使うかの選択
+ *   注意事項 : 
+ *     ・全てONにすると，メモリ不足でArduino Unoは動作がおかしくなる．
+ **********************************/
+//#define DEBUG              // 動作ログをコンソールに出力
+#define MIN_LOG            // 動作ログのうち，最小限度のものだけを出力
+#define RESET              // 夜中に再起動
+#define ARDUINO_SLEEP      // 待機中は低電力状態に設定
+#define SERIAL_COM         // センサ処理の結果をシリアルで外部に出力
+#define USE_SD             // センサ処理の結果をSDカードに保存する
+#define USE_XBEE_ASSOC     // Xbeeの電波強度等を調べる機能のON/OFF
 
-// 機種の定義
-//#define MEGA
-#define GR_KURUMI // 1.5V駆動で35mA (アイドル時) 1.1V駆動で53mA (アイドル時) 1.0V駆動では動作せず (DC/DCのせい?)
+ /**********************************
+ * 接続するピン関係の番号の設定
+ **********************************/
+ 
+//#define SD_CHIP_SELECT 8     // sparcfunのマイクロSDシールドのチップセレクト用のピンは8番ピン
+#define SD_CHIP_SELECT 6     // SPI,I2C,2番目以降のシリアルのピン，割り込みが可能なピンを避けると，利用できるのは4～6
 
-//利用する周辺機器の定義
-// Pin 22,23,24 are assigned to RGB LEDs.
-int led_red   = 22; // LOW active
-int led_green = 23; // LOW active
-int led_blue  = 24; // LOW active
+#ifdef SERIAL_COM            // Xbee等をシリアルに接続してセンサの処理結果を出力する場合のシリアル接続の端子番号
+#ifdef AVR
+#define SERIAL_COM_RX 5      // GR-kurumiの場合，Serial2を使うため，ピン番号の指定は不要
+#define SERIAL_COM_TX 6
+#endif /* AVR */
+#endif /* SERIAL_COM */
 
+#define XBEE_ON_PIN A0       // Xbeeを使う場合のXbeeのON/SLEEP端子の指定 (GR-kurumi用)
+//#define XBEE_ON_PIN 3        // Xbeeを使う場合のXbeeのON/SLEEP端子の指定 (Arduino用)
+//#define XBEE_ON_INT 1        // Xbeeから起こされる場合の割り込み番号 (Arduino用)
+#define XBEE_ASSOCIATE 3     // Xbeeがネットに接続されているか否かを示すピン
+#define XBEE_RSSI 4          // Xbeeの電波の受信強度
 
-#ifdef USE_SOFT_SERIAL
-#define SOFT_SERIAL_TX 6
-#define SOFT_SERIAL_RX 7
-#define pinSerialRx SOFT_SERIAL_RX //Rxに接続する (対象の機器Data Out) のピン番号
-#define pinSerialTx SOFT_SERIAL_TX //Txに接続する (対象の機器のData In) のピン番号
-#endif /* USE_SOFT_SERIAL */
-// RTCの種別定義
-//#define RTC8564NB
-#define DS3234
-#ifdef DS3234
-#define DS3234_CHIP_SELECT 9
-#endif /* DS3234 */
-#define SD_CHIP_SELECT 6
+#define DHT_PIN 5            // DHTシリーズの温湿度センサを接続するピン番号
+/***********************************************************************************
+  Arduinoの割り込み番号と対応するピン番号
+---------+-----------------------------+
+         |        割り込み番号         |
+ 機種名  | 00 | 01 | 02 | 03 | 04 | 05 |
+---------+----+----+----+----+----+----+
+UNO      |  2 |  3 |    |    |    |    |
+---------+----+----+----+----+----+----+
+Mega     | 21 | 20 | 19 | 18 |  2 |  3 |
+---------+----+----+----+----+----+----+
+Leonardo |  3 |  2 |  0 |  1 |    |    |
+---------+----+----+----+----+----+----+
 
-// 温度湿度センサの定義
-//#define SHT_SENSOR
-#define DHT_SENSOR
-#ifdef DHT_SENSOR
-#define DHT_PIN 4
-#endif /* DHT_SENSOR */
+参考情報 : M0/M0 Proは以下のURLを参照
+・http://www.geocities.jp/zattouka/GarageHouse/micon/Arduino/Zero/gaiyo.htm
 
-// その他一般的な定数の定義
-#define BUFF_MAX 256
-#define usbSerialBaudrate 9600 //シリアル通信のボーレート
-//#define dataSerialBaudrate 115200 //データが入力されるシリアル通信のボーレート
-#define dataSerialBaudrate 9600 //データが入力されるシリアル通信のボーレート
+***********************************************************************************/
+/**********************************
+ * ここから，センサ関係処理の定義
+ *  注意事項 :
+ *    ・本来この部分はユーザが開発する
+ *    ・DHTシリーズのセンサを用いるこのプログラムはあくまでサンプル
+ *    ・今回使うのはDHTシリーズセンサ用ライブラリのうち，https://github.com/markruys/arduino-DHT
+ **********************************/
 
-#ifdef MEGA
-#define AVR
-#endif /* MEGA */
-
-#ifdef RTC8564NB
-#include <Wire.h>
-#include <skRTClib.h>
-#endif /* RTC8564NB */
-#ifdef DS3234
-#include <SPI.h>
-#include "ds3234.h"
-//#include <RLduino78_RTC.h>
-const int cs = DS3234_CHIP_SELECT;              // chip select pin
-#endif /* DS3234 */
-
-#ifdef SHT_SENSOR
-#include <Wire.h>
-#include <SHT2x.h>
-#endif /* SHT_SENSOR */
+#define DHT_SENSOR  // 温度湿度センサを用いるか否かの指定
 
 #ifdef DHT_SENSOR
 #include "DHT.h"
 DHT dht;
 #endif /* DHT_SENSOR */
 
-#ifdef RTC8564NB // RTC8564NBは割り込みが使える
-// 手持ちのMega2560では，INT0,1が動作しなかったため，大きい番号の割込みを利用
-//#define INT_NUMBER 5
-//#define PIN_NUMBER 18
-// UNOはINT0,1が動作するため，こちらを利用
-#define INT_NUMBER 0
-#define PIN_NUMBER 2
-// M0 pro http://www.geocities.jp/zattouka/GarageHouse/micon/Arduino/Zero/gaiyo.htm
-//#define INT_NUMBER 9
-//#define PIN_NUMBER 3
-//#define INT_NUMBER 6
-//#define PIN_NUMBER 8
+void setupSensor()
+{
+#ifdef DHT_SENSOR
+  dht.setup(DHT_PIN); // DHTをセットアップ
+#endif /* DHT_SENSOR */
+}
 
-skRTClib skRTC = skRTClib() ;             // Preinstantiate Objects
-#endif /* RTC8564NB */
+#define MAX_RETRY 5 // センサからデータが正常に読めなかった場合に，リトライする回数の指定
+
+void getSensorValue(char * buff){
+#ifdef DHT_SENSOR
+  float temperatureVal, humidityVal;
+#ifdef AVR
+  char temperature[10],humidity[10];
+#endif
+  for (int i=0; i < MAX_RETRY ; i++ ){  // 一回ではデータが読み取れないかもしれないため，数回トライする
+    delay(dht.getMinimumSamplingPeriod()); // DHTシリーズセンサのデータ読み取り準備のために一定時間待機する
+    temperatureVal = dht.getTemperature();
+    humidityVal = dht.getHumidity();
+    if ((!isnan(temperatureVal)) && (!isnan(humidityVal))) { // 温度湿度両方ちゃんと読めたらループをぬけ出す
+      break;
+    }
+  }
+#ifdef AVR
+  dtostrf(humidityVal,-1,1,humidity);
+  dtostrf(temperatureVal,-1,1,temperature);
+  sprintf(buff,"Humidity = %s , Temperature(C) = %s",humidity,temperature);
+#endif /* AVR */
+#ifdef GR_KURUMI
+  sprintf(buff,"Humidity = %f , Temperature(C) = %f",humidityVal,temperatureVal);
+#endif /* GR_KURUMI */
+#else
+  sprintf(buff,"Hello World!");
+#endif /* DHT_SENSOR */
+}
+
+
+/**********************************
+ *
+ * ここまで
+ *
+ **********************************/
+
+#ifdef GR_KURUMI
+#include <Arduino.h>
+#endif /* GR_KURUMI */
+
+#define XBEE_DELAY 5000
+#define BUFF_MAX 512
+#define TIME_BUFF_MAX 256
+#define VAL_LENGTH_MAX 200
+#define MAX_SLEEP 10000
+
+#include <Wire.h>
+#include <skRTClib.h>
+
 
 /* 時計関係 */
 #include <Time.h>
-unsigned long bootTime,lastTime;
+unsigned long bootTime;
 
-//#define TIMER_THRESHOLD 86400 // 24時間
-//#define TIMER_THRESHOLD 7200 // 2時間
-//#define TIMER_THRESHOLD 600 // 10分
-//#define TIMER_THRESHOLD 60 // 1分
-#define TIMER_THRESHOLD 30 // 30秒
-//#define TIMER_THRESHOLD 10 // 10秒
+
+#ifdef SERIAL_COM
+#ifdef AVR
+#include <SoftwareSerial.h>
+#endif /* AVR */
+#endif
+
+#ifdef ARDUINO_SLEEP
+#ifdef AVR
+#include <avr/sleep.h>
+#endif
+#endif /* ARDUINO_SLEEP */
+
+
+#ifdef SERIAL_COM
+#ifdef AVR
+SoftwareSerial serialCom(SERIAL_COM_RX, SERIAL_COM_TX); // RX, TX
+#endif /* AVR */
+#endif /* SERIAL_COM */
+
+#ifdef USE_SD
+// SDシールド関係の定義
+#include <SPI.h>
+#include <SdFat.h>
+
+#define FILE_BASE_NAME "Data"  //データファイルのベース名
+SdFat sd;      // File system object
+SdFile file;  // Log file.
+#define error(msg) sd.errorHalt(F(msg))  // エラーをSDに残すためのマクロ
+#define SDCARD_SPEED SPI_HALF_SPEED  // 安全のため，低速モードで動作させる場合
+//#define SDCARD_SPEED SPI_FULL_SPEED  // 性能重視の場合
+#endif /* USE_SD */
+
+
+
+#ifdef ARDUINO_SLEEP
+#ifdef AVR
+/*
+ *　端末が眠る場合の眠りの深さの指定
+ */
+//#define STANDBY_MODE SLEEP_MODE_IDLE
+//#define STANDBY_MODE SLEEP_MODE_ADC
+//#define STANDBY_MODE SLEEP_MODE_PWR_SAVE
+//#define STANDBY_MODE SLEEP_MODE_STANDBY
+#define STANDBY_MODE SLEEP_MODE_PWR_DOWN
+#endif /* AVR */
+#endif /* ARDUINO_SLEEP */
+
+
+
+// 起動時の時刻設定のコマンド入力待ち時間
+#define COMMAND_TIMER_THRESHOLD 15 // 15秒
+#define SERIAL_THRESHOLD 10000 // 10秒
+
+// 改行文字の定義
+#define LINE_FEED 0x0a
+#define CR 0x0d
+
+#define TERMINATE_CHAR  CR //CR
+//#define TERMINATE_CHAR LINE_FEED  //LF
 
 #define REBOOT_THRESHOLD 86400 //一日
 //#define REBOOT_THRESHOLD 3600 // 1時間
@@ -110,69 +208,67 @@ unsigned long bootTime,lastTime;
 //#define REBOOT_THRESHOLD 30 // 30秒
 
 
-#define SERIAL_THRESHOLD 10000 // 10秒
-#define COMMAND_TIMER_THRESHOLD 15 // 15秒
+skRTClib skRTC = skRTClib() ;             // Preinstantiate Objects
 
-#define LINE_FEED 0x0a
-#define CR 0x0d
-
-#define LOG_TERMINATE_CHAR CR // TeraTermでのテストはCRが行末
-//#define LOG_TERMINATE_CHAR LINE_FEED // 無線ノードは LFが行末??
-#define TERMINATE_CHAR  CR //CR
-//#define TERMINATE_CHAR LINE_FEED  //LF
-
-#ifdef USE_SOFT_SERIAL
-// ソフトシリアル関係の定義
-#include <SoftwareSerial.h>
-SoftwareSerial sSerial(pinSerialRx, pinSerialTx);  // ソフトウェアシリアルの設定
-#endif /* USE_SOFT_SERIAL */
-
-bool lineFlag=true;
-
-
-// SDシールド関係の定義
-#include <SPI.h>
-#include <SdFat.h>
-
-const uint8_t chipSelect = SD_CHIP_SELECT;  // sparc funのsdシールドは8番
-#define FILE_BASE_NAME "Data"  //データファイルのベース名
-SdFat sd;      // File system object
-SdFile file;  // Log file.
-#define error(msg) sd.errorHalt(F(msg))  // エラーをSDに残すためのマクロ
-#define SDCARD_SPEED SPI_HALF_SPEED  // 安全のため，低速モードで動作させる場合
-//#define SDCARD_SPEED SPI_FULL_SPEED  // 性能重視の場合
-
-
-#ifdef GR_KURUMI
-//#include <RLduino78.h>
-#include <RLduino78_RTC.h>
-void alarm_handler();
-RTC_TIMETYPE trtc;
-int interFlag=0;
-void alarm_handler()
-{
-  //interFlag=1;
-  reboot();
-}
-#endif /* GR_KURUMI */
-
-#ifdef RTC8564NB
+/**********************************
+ * 割り込み関係
+ **********************************/
+ 
+volatile boolean xbeeInter = false;
 /*
  * RTC(CLKOUT)からの外部割込みで実行される関数
  */
-void InterRTC()
+void InterXbee()
 {
-  skRTC.InterFlag = 1 ;
-  Serial.println("");
-  Serial.println(F("Interupt!"));
-  Serial.println("");
+  xbeeInter = true;
 }
-#endif /* RTC8564NB */
 
+/**********************************
+ * reboot
+ **********************************/
+void reboot() {
+#ifdef AVR
+  asm volatile ("  jmp 0");
+#endif /* AVR */
+#ifdef GR_KURUMI
+  softwareReset();
+#endif /* GR_KURUMI */
+}
 
-/*******************************************************************************
-*  電源起動時とリセットの時だけのみ処理される関数(初期化と設定処理)            *
-*******************************************************************************/
+/**********************************
+ * MCUの省電力モードへの移行処理
+ **********************************/
+#ifdef ARDUINO_SLEEP
+void goodNight(int i) {
+#ifdef DEBUG
+  Serial.println(F("  Good Night"));
+  Serial.flush();
+#endif /* DEBUG */
+#ifdef AVR
+  delay(100);
+  noInterrupts();
+  set_sleep_mode(i);
+  sleep_enable();
+  interrupts();
+  sleep_cpu();
+  sleep_disable();
+#endif /* AVR */
+#ifdef GR_KURUMI
+  //analogReference(DEFAULT);
+  //setPowerManagementMode(PM_SNOOZE_MODE, 0, 500);
+  setPowerManagementMode(PM_SNOOZE_MODE, 800, 1024);
+  int value = analogRead(XBEE_ON_PIN);
+  setPowerManagementMode(PM_NORMAL_MODE);
+#ifdef DEBUG
+  Serial.print("Value = ");
+  Serial.println(value);
+#endif /* DEBUG */
+#endif /* GR_KURUMI */
+}
+#endif
+/**********************************
+ * 時刻を設定する対話処理
+ **********************************/
 void shell(){
   byte tm[7] ;
   unsigned long currentTime;
@@ -180,9 +276,9 @@ void shell(){
 retry:
   bootTime=now();
   Serial.setTimeout(SERIAL_THRESHOLD);
-  Serial.println("Please input current time.");
+  Serial.println(F("Please input current time."));
 yearRetry:
-  Serial.print("Year (2000 - 2100): ");
+  Serial.print(F("Year (2000 - 2100): "));
   String yearString = Serial.readStringUntil(TERMINATE_CHAR);
   yearVal=yearString.toInt();
   Serial.println(yearVal);
@@ -196,7 +292,7 @@ yearRetry:
   }
   bootTime=now();
 monthRetry:
-  Serial.print("Month (1 - 12): ");
+  Serial.print(F("Month (1 - 12): "));
   String monthString = Serial.readStringUntil(TERMINATE_CHAR);
   monthVal=monthString.toInt();
   Serial.println(monthVal);
@@ -210,7 +306,7 @@ monthRetry:
   }
   bootTime=now();
 dayRetry:
-  Serial.print("Day (1 - 31): ");
+  Serial.print(F("Day (1 - 31): "));
   String dayString = Serial.readStringUntil(TERMINATE_CHAR);
   dayVal=dayString.toInt();
   Serial.println(dayVal);
@@ -224,7 +320,7 @@ dayRetry:
   }
   bootTime=now();
 wDayRetry:
-  Serial.print("week Day (sun(0), mon(1), tue(2) , wen(3), tur(4), fri(5), sat(6): ");
+  Serial.print(F("week Day (sun(0), mon(1), tue(2) , wen(3), tur(4), fri(5), sat(6): "));
   String wDayString = Serial.readStringUntil(TERMINATE_CHAR);
   wDayVal=wDayString.toInt();
   Serial.println(wDayVal);
@@ -238,7 +334,7 @@ wDayRetry:
   }
   bootTime=now();
 hourRetry:
-  Serial.print("Hour (0 - 23): ");
+  Serial.print(F("Hour (0 - 23): "));
   String hourString = Serial.readStringUntil(TERMINATE_CHAR);
   hourVal=hourString.toInt();
   Serial.println(hourVal);
@@ -252,7 +348,7 @@ hourRetry:
   }
   bootTime=now();
 minRetry:
-  Serial.print("Min (0 - 59): ");
+  Serial.print(F("Min (0 - 59): "));
   String minString = Serial.readStringUntil(TERMINATE_CHAR);
   minVal=minString.toInt();
   Serial.println(minVal);
@@ -266,7 +362,7 @@ minRetry:
   }
   bootTime=now();
 secRetry:
-  Serial.print("Sec (0 - 59): ");
+  Serial.print(F("Sec (0 - 59): "));
   String secString = Serial.readStringUntil(TERMINATE_CHAR);
   secVal=secString.toInt();
   Serial.println(secVal);
@@ -281,7 +377,7 @@ secRetry:
   bootTime=now();
 again:
   Serial.print(yearVal);Serial.print("/");Serial.print(monthVal);Serial.print("/");Serial.print(dayVal);Serial.print(" ");Serial.print(hourVal);Serial.print(":");Serial.print(minVal);Serial.print(":");Serial.println(secVal);
-  Serial.print("The time is correct?  [Y/n] : ");
+  Serial.print(F("The time is correct?  [Y/n] : "));
   String yesno = Serial.readStringUntil(TERMINATE_CHAR);
   Serial.println(yesno);
   if ((!(yesno.equals("Y")))&&(!(yesno.equals("N")))&&(!(yesno.equals("y")))&&(!(yesno.equals("n")))) {
@@ -296,368 +392,32 @@ again:
     yearVal=-1,monthVal=-1,dayVal=-1,hourVal=-1,minVal=-1,secVal=-1;
     goto retry;
   }
-  Serial.println("Let us go");
+  Serial.println(F("start!"));
   //
-  char buff[BUFF_MAX] ;
-#ifdef RTC8564NB
+  char tbuff[TIME_BUFF_MAX] ;
   int ans = skRTC.sTime((byte)(yearVal-2000),(byte)monthVal,(byte)dayVal,(byte)wDayVal,(byte)hourVal,(byte)minVal,(byte)secVal);
   if (ans == 0) {
-    Serial.println("RTC configuration successfull") ;// 初期化成功
+    Serial.println(F("RTC configuration successfull")) ;// 初期化成功
     skRTC.rTime(tm) ;                         // RTCから現在の日付と時刻を読込む
-    skRTC.cTime(tm,(byte *)buff) ;             // 日付と時刻を文字列に変換する
-    Serial.println(buff) ;                   // シリアルモニターに表示
+    skRTC.cTime(tm,(byte *)tbuff) ;             // 日付と時刻を文字列に変換する
+    Serial.println(tbuff) ;                   // シリアルモニターに表示
   } else {
-    Serial.print("RTC configuration failure. ans=") ; // 初期化失敗
+    Serial.print(F("RTC configuration failure. ans=")) ; // 初期化失敗
     Serial.println(ans) ;
-    //reboot() ;                         // 処理中断
+    reboot() ;                         // 処理中断
   }
+
   setTime(skRTC.bcd2bin(tm[2]),skRTC.bcd2bin(tm[1]),skRTC.bcd2bin(tm[0]),skRTC.bcd2bin(tm[3]),skRTC.bcd2bin(tm[5]),skRTC.bcd2bin(tm[6]));
-#endif /* RTC8564NB */
-#ifdef DS3234
-  struct ts t;
-  t.sec = secVal;
-  t.min = minVal;
-  t.hour = hourVal;
-  t.wday = wDayVal;
-  t.mday = dayVal;
-  t.mon = monthVal;
-  t.year = yearVal;
-  DS3234_set(cs, t);
-  DS3234_get(cs, &t);
-  snprintf(buff, BUFF_MAX, "%d.%02d.%02d %02d:%02d:%02d", t.year,t.mon, t.mday, t.hour, t.min, t.sec);
-  Serial.println(buff);
-#ifdef UTC
-  setTime(t.unixtime+(9*60*60));
-#else /* UTC */
-  setTime(t.unixtime);
-#endif /* UTC */
-#endif /* DS3234 */
+  //setTime(skRTC.bcd2bin(tm[2]),skRTC.bcd2bin(tm[1]),skRTC.bcd2bin(tm[0]),skRTC.bcd2bin(tm[3]),skRTC.bcd2bin(tm[5]),(skRTC.bcd2bin(tm[6])+2000));
+  //Serial.print(year());Serial.print("/");Serial.print(month());Serial.print("/");Serial.print(day());Serial.print(" ");Serial.print(hour());Serial.print(":");Serial.print(minute());Serial.print(":");Serial.println(second());
   bootTime=now();
 }
 
-//
-// 全体の初期化
-//
-void setup()
-{
-#ifdef RTC8564NB
-  int ans ;
-  byte tm[7] ;
-#endif /* RTC8564NB */
-  char buff[BUFF_MAX] ;
-  int configFlag=0;
-  unsigned long currentTime;
-#if defined(RTC8564NB) || defined(SHT_SENSOR)
-  Wire.begin();
-#endif /* RTC8564NB or SHT_SENSOR */
-#ifdef DHT_SENSOR
-  dht.setup(DHT_PIN); // DHTをセットアップ
-#endif /* DHT_SENSOR */
-#ifdef DEBUG_CHIP_SELECT
-  pinMode(cs,OUTPUT);
-  pinMode(chipSelect,OUTPUT);
-  digitalWrite(cs,HIGH);
-  digitalWrite(chipSelect,HIGH);
-#endif /* DEBUG_CHIP_SELECT */
-  //pinMode( PIN_NUMBER, INPUT);    // RTCからの割込みを読むのに利用
-  Serial.begin(usbSerialBaudrate) ;                    // シリアル通信の初期化
-#ifdef USE_SOFT_SERIAL
-  sSerial.begin(dataSerialBaudrate);  // ソフトウェアシリアルの初期化
-#else /* USE_SOFT_SERIAL */
-#ifdef MEGA
-  Serial3.begin(dataSerialBaudrate);  // 機器接続用シリアルポート初期化
-#endif /* MEGA */
-#ifdef GR_KURUMI
-  Serial1.begin(dataSerialBaudrate);  // 機器接続用シリアルポート初期化
-#endif /* GR_KURUMI */
-#endif /* USE_SOFT_SERIAL */
-#ifdef GR_KURUMI
-  pinMode(led_red, OUTPUT);
-  pinMode(led_green, OUTPUT);
-  pinMode(led_blue, OUTPUT);
-  //for (int i=0;i<10;i++){
-  digitalWrite(led_red, HIGH);
-  digitalWrite(led_green, HIGH);
-  digitalWrite(led_blue, HIGH);
-  for (int i=0;i<10;i++){
-    digitalWrite(led_red,LOW);
-    delay(200);
-    digitalWrite(led_red, HIGH);
-    digitalWrite(led_green, LOW);
-    delay(200);
-    digitalWrite(led_green, HIGH);
-    digitalWrite(led_blue, LOW);
-    delay(200);
-    digitalWrite(led_blue, HIGH);
-  }
-#endif /* GR_KURUMI */
-#ifdef RTC8564NB
-  ans = skRTC.begin(PIN_NUMBER,INT_NUMBER,InterRTC,12,1,10,2,15,30,0) ;  // 2012/01/10 火 15:30:00 でRTCを初期化する
-  if (ans == 0) {
-    Serial.println(F("Successful initialization of the RTC")) ;// 初期化成功
-  } else {
-    Serial.print(F("Failed initialization of the RTC ans=")) ; // 初期化失敗
-    Serial.println(ans) ;
-    while(1) ;                         // 処理中断
-  }
-  skRTC.rTime(tm) ;                        // RTCから現在の日付と時刻を読込む
-  skRTC.cTime(tm,(byte *)buf) ;             // 日付と時刻を文字列に変換する
-  Serial.println(buf) ;                   // シリアルモニターに表示
-  setTime(skRTC.bcd2bin(tm[2]),skRTC.bcd2bin(tm[1]),skRTC.bcd2bin(tm[0]),skRTC.bcd2bin(tm[3]),skRTC.bcd2bin(tm[5]),skRTC.bcd2bin(tm[6]));
-#endif /* RTC8564NB  */
-#ifdef DS3234
-  struct ts t;
-  DS3234_init(cs, DS3234_INTCN);
-  Serial.println("Start time");
-  DS3234_get(cs, &t);
-  snprintf(buff, BUFF_MAX, "%d.%02d.%02d %02d:%02d:%02d", t.year,t.mon, t.mday, t.hour, t.min, t.sec);
-  Serial.println(buff) ;                   // シリアルモニターに表示
-#ifdef UTC
-  setTime(t.unixtime+(9*60*60));
-#else /* UTC */
-  setTime(t.unixtime);
-#endif /* UTC */
-#endif /* DS3234 */
-  bootTime=now();
-  Serial.print(F("Current system time : ")) ;
-  Serial.print(year());Serial.print("/");Serial.print(month());Serial.print("/");Serial.print(day());Serial.print(" ");Serial.print(hour());Serial.print(":");Serial.print(minute());Serial.print(":");Serial.println(second());
-  Serial.println(F("Hit any key to configure RTC.")) ;
-  while(configFlag==0) {
-    currentTime=now();
-    if ((currentTime - bootTime) > COMMAND_TIMER_THRESHOLD) {
-      configFlag=1;
-    }
-    if (Serial.available()) {
-      configFlag=2;
-      int data=Serial.read();
-      shell();
-    }
-  }
-#ifdef GR_KURUMI
-  int err = rtc_init();
+#ifdef USE_SD
+/**********************************
+ * データのSDへの書き込み
+ **********************************/
 
-  trtc.year    = year()-2000;
-  trtc.mon     = month();
-  trtc.day     = day();
-  trtc.weekday = weekday()+1;
-  trtc.hour    = hour();
-  trtc.min     = minute();
-  trtc.second  = second();
-
-  err = rtc_set_time(&trtc);
-  rtc_attach_alarm_handler(alarm_handler);
-  if (trtc.hour!=1){
-    err = rtc_set_alarm_time(1, 0);
-  }
-  //digitalWrite(led_blue, LOW);
-  //digitalWrite(led_green, HIGH);
-#endif /* GR_KURUMI */
-#ifdef GR_KURUMI
-#endif /* GR_KURUMI */
-  Serial.println(F("Start"));
-  char fileName[13] = FILE_BASE_NAME "00.txt";
-
-  if (!sd.begin(chipSelect, SDCARD_SPEED)) {
-#ifdef GR_KURUMI
-    digitalWrite(led_blue, HIGH);
-    digitalWrite(led_green, HIGH);
-    digitalWrite(led_red, LOW);
-#endif /* GR_KURUMI */
-    sd.initErrorHalt();
-  }
-  openLogFile();
-  
-  Serial.print(F("Logging to: "));
-  Serial.println(fileName);
-  
-  lastTime=now();
-#ifdef GR_KURUMI
-    digitalWrite(led_blue, LOW);
-    digitalWrite(led_green, LOW);
-    digitalWrite(led_red, LOW);
-    delay(1000);
-    digitalWrite(led_blue, HIGH);
-    digitalWrite(led_green, HIGH);
-    digitalWrite(led_red, HIGH);
-#endif /* GR_KURUMI */
-}
-/*******************************************************************************
-*  繰り返し実行される処理の関数(メインの処理)                                  *
-*******************************************************************************/
-void loop()
-{
-#ifndef USE_INTERNAL_TIMER
-#ifdef RTC8564NB
-  byte tm[7] ;
-#endif /* RTC8564NB */
-#ifdef DS3234
-  struct ts t;
-#endif /* DS3234 */
-  char buff[BUFF_MAX] ;
-#endif /* USE_INTERNAL_TIMER */
-//#ifndef GR_KURUMI
-  if ((1==hour())&&(REBOOT_THRESHOLD < (now() - bootTime))){ // 稼働時間が1時間以上で，夜中一時だったらリブート
-#ifdef DEBUG
-    Serial.println(F("reboot"));
-#endif /* DEBUG */
-    reboot();
-  }
-//#endif /* GR_KURUMI */
-  if ((TIMER_THRESHOLD < (now()-lastTime))&& lineFlag) {
-#ifdef LED_ON_WRITE
-    digitalWrite(led_red,LOW);
-    digitalWrite(led_green,LOW);
-    digitalWrite(led_blue,LOW);
-#endif /* LED_ON_WRITE */
-    // 温度を測る
-#ifndef USE_INTERNAL_TIMER
-    memset(buff,0,BUFF_MAX-1);
-#endif /* USE_INTERNAL_TIMER */
-#ifndef USE_INTERNAL_TIMER
-#ifdef RTC8564NB
-    skRTC.rTime(tm) ;                         // RTCから現在の日付と時刻を読込む
-    skRTC.cTime(tm,(byte *)buff) ;             // 日付と時刻を文字列に変換する
-#ifdef DEBUG
-    Serial.print(buff) ;                   // シリアルモニターに表示
-#endif /* DEBUG */
-#endif /* RTC8564NB */
-#ifdef DS3234
-#ifdef DEBUG_CHIP_SELECT
-    digitalWrite(chipSelect,HIGH);
-#endif /* DEBUG_CHIP_SELECT */
-    DS3234_get(cs, &t);
-#ifdef DEBUG
-    snprintf(buff, BUFF_MAX, "%d.%02d.%02d %02d:%02d:%02d", t.year,t.mon, t.mday, t.hour, t.min, t.sec);
-    Serial.print(buff) ;                   // シリアルモニターに表示
-#endif /* DEBUG */
-#endif /* DS3234 */
-#else /* USE_INTERNAL_TIMER */
-    Serial.print(year());Serial.print("/");Serial.print(month());Serial.print("/");Serial.print(day());Serial.print(" ");Serial.print(hour());Serial.print(":");Serial.print(minute());Serial.print(":");Serial.print(second());
-#endif /* USE_INTERNAL_TIMER */
-#ifdef DEBUG
-#ifdef SHT_SENSOR
-    Serial.print(F(" : Humidity(%RH) = "));
-    Serial.print(SHT2x.GetHumidity());
-    Serial.print(F(" , Temperature(C) = "));
-    Serial.println(SHT2x.GetTemperature());
-#endif /* SHT_SENSOR */
-#ifdef DHT_SENSOR
-    Serial.print(F(" : Humidity(%RH) = "));
-    Serial.print(dht.getHumidity(), 1);
-    Serial.print(F(" , Temperature(C) = "));
-    Serial.println(dht.getTemperature(), 1);
-#endif /* DHT_SENSOR */
-#endif /* DEBUG */
-#ifndef USE_INTERNAL_TIMER
-    file.print(buff) ;                   // ファイルに書き込み
-#else /* USE_INTERNAL_TIMER */
-    file.print(year());file.print("/");file.print(month());file.print("/");file.print(day());file.print(" ");file.print(hour());file.print(":");file.print(minute());file.print(":");file.print(second());
-#endif /* USE_INTERNAL_TIMER */
-#ifdef SHT_SENSOR
-    file.print(F(" : Humidity(%RH) = "));
-    file.print(SHT2x.GetHumidity());
-    file.print(F(" , Temperature(C) = "));
-    file.println(SHT2x.GetTemperature());
-#endif /* SHT_SENSOR */
-#ifdef DHT_SENSOR
-    file.print(F(" : Humidity(%RH) = "));
-    file.print(dht.getHumidity(), 1);
-    file.print(F(" , Temperature(C) = "));
-    file.println(dht.getTemperature(), 1);
-#endif /* DHT_SENSOR */
-    file.flush();
-    lastTime=now();
-#ifdef LED_ON_WRITE
-    digitalWrite(led_red,HIGH);
-    digitalWrite(led_green,HIGH);
-    digitalWrite(led_blue,HIGH);
-#endif /* LED_ON_WRITE */
-  }
-#ifdef USE_SOFT_SERIAL
-  if (sSerial.available()) {
-    int data=sSerial.read();
-#endif /* USE_SOFT_SERIAL */
-#ifdef MEGA
-  if (Serial3.available()) {
-    int data=Serial3.read();
-#endif /* MEGA */
-#ifdef DATA_CONSOLE
-  if (Serial.available()) {
-    int data=Serial.read();
-#endif /* DATA_CONSOLE */
-#ifdef GR_KURUMI
-  if (Serial1.available()) {
-    int data=Serial1.read();
-#endif /* GR_KURUMI  */
-#ifdef LED_ALWAYS_ON_WRITE
-    digitalWrite(led_red,LOW);
-    digitalWrite(led_green,LOW);
-    digitalWrite(led_blue,LOW);
-#endif /* LED_ALWAYS_ON_WRITE */
-    if (lineFlag) {
-#ifndef USE_INTERNAL_TIMER
-      memset(buff,0,BUFF_MAX-1);
-#ifdef RTC8564NB
-      skRTC.rTime(tm) ;                         // RTCから現在の日付と時刻を読込む
-      skRTC.cTime(tm,(byte *)buff) ;             // 日付と時刻を文字列に変換する
-#endif /* RTC8564NB */
-#ifdef DS3234
-#ifdef DEBUG_CHIP_SELECT
-      digitalWrite(chipSelect,HIGH);
-#endif /* DEBUG_CHIP_SELECT */
-      DS3234_get(cs, &t);
-      snprintf(buff, BUFF_MAX, "%d.%02d.%02d %02d:%02d:%02d", t.year,t.mon, t.mday, t.hour, t.min, t.sec);
-#endif /* DS3234 */
-#endif /* USE_INTERNAL_TIMER */
-#ifdef DEBUG
-#ifndef USE_INTERNAL_TIMER
-      Serial.print(buff) ;                   // シリアルモニターに表示
-#else /* USE_INTERNAL_TIMER */
-      Serial.print(year());Serial.print("/");Serial.print(month());Serial.print("/");Serial.print(day());Serial.print(" ");Serial.print(hour());Serial.print(":");Serial.print(minute());Serial.print(":");Serial.print(second());
-#endif /* USE_INTERNAL_TIMER */
-      Serial.print(F(" : "));
-#endif /* DEBUG */
-#ifndef USE_INTERNAL_TIMER
-      file.print(buff) ;
-#else /* USE_INTERNAL_TIMER */
-      file.print(year());file.print("/");file.print(month());file.print("/");file.print(day());file.print(" ");file.print(hour());file.print(":");file.print(minute());file.print(":");file.print(second());
-#endif /* USE_INTERNAL_TIMER */
-      file.print(F(" : "));
-      lineFlag=false;
-    }
-    if ((data==CR)||(data==LINE_FEED)) {
-      if (data==LOG_TERMINATE_CHAR) {
-        lineFlag=true;
-#ifdef DEBUG
-        Serial.println("");
-#endif /* DEBUG */
-        file.println("");
-        file.flush();
-#ifdef LED_ALWAYS_ON_WRITE
-        digitalWrite(led_red,LOW);
-        digitalWrite(led_green,LOW);
-        digitalWrite(led_blue,LOW);
-#endif /* LED_ALWAYS_ON_WRITE */
-      }
-    } else {
-#ifdef DEBUG
-      Serial.write(data);
-#endif /* DEBUG */
-      logData(data);
-    }
-  }
-}
-//
-// 本体をリセットする関数
-//
-void reboot() {
-#ifdef AVR
-  asm volatile ("  jmp 0");
-#endif /* AVR */
-#ifdef GR_KURUMI
-  softwareReset();
-#endif /* GR_KURUMI */
-}
 // Log a data record.
 void logData(int data) {
   file.write(data);
@@ -666,7 +426,83 @@ void logData(int data) {
   }
 }
 
-// ログファイルのオープン
+/**********************************
+ * ログファイルの数のチェック
+ **********************************/
+int searchLogFile(){
+  const uint8_t BASE_NAME_SIZE = sizeof(FILE_BASE_NAME) - 1;
+  char fileName[13] = FILE_BASE_NAME "00.txt";
+  int lastFileNumber=0;
+  // ログファイルのうち，番号が一番大きい物を探し，lastFileNumberに番号を代入
+  while (sd.exists(fileName)) {
+    if (fileName[BASE_NAME_SIZE + 1] != '9') {
+      fileName[BASE_NAME_SIZE + 1]++;
+    } else if (fileName[BASE_NAME_SIZE] != '9') {
+      fileName[BASE_NAME_SIZE + 1] = '0';
+      fileName[BASE_NAME_SIZE]++;
+    } else {
+#ifdef DEBUG
+      Serial.print(F("lastFileNumber = "));
+      Serial.println(lastFileNumber);
+#endif
+      return(100);
+    }
+    lastFileNumber++;
+  }
+#ifdef DEBUG
+  Serial.print(F("lastFileNumber = "));
+  Serial.println(lastFileNumber);
+#endif
+  return(lastFileNumber);
+}
+/**********************************
+ * ログローテーション
+ **********************************/
+void logRotation(int num){
+  const uint8_t BASE_NAME_SIZE = sizeof(FILE_BASE_NAME) - 1;
+  char srcfileName[13] = FILE_BASE_NAME "00.txt";
+  char dstfileName[13] = FILE_BASE_NAME "00.txt";
+  char eraseFileName[13] = FILE_BASE_NAME "99.txt";
+  int counter=num;
+  int src1Num,src2Num,dst1Num,dst2Num;
+#ifdef DEBUG
+  Serial.print(F("logRotation(num); num = "));
+  Serial.println(num);
+#endif
+  if (counter==0) {
+#ifdef DEBUG
+    Serial.println(F("do nothing"));
+#endif
+    return;
+  } else if (counter==100) {
+#ifdef DEBUG
+    Serial.println(F("remove oldest file"));
+#endif
+    sd.remove(eraseFileName);
+    counter--;
+  }
+#ifdef DEBUG
+  Serial.println(F("log rotation"));
+#endif
+  while (counter>0) {
+    dst1Num=counter%10;
+    dst2Num=int(counter/10);
+    src1Num=(counter-1)%10;
+    src2Num=int((counter-1)/10);
+    //ファイル名の作成
+    srcfileName[BASE_NAME_SIZE + 1]=0x30 + src1Num;
+    srcfileName[BASE_NAME_SIZE    ]=0x30 + src2Num;
+    dstfileName[BASE_NAME_SIZE + 1]=0x30 + dst1Num;
+    dstfileName[BASE_NAME_SIZE    ]=0x30 + dst2Num;
+    // counter-1のファイルをcounterのファイルにrename
+    sd.rename(srcfileName,dstfileName);
+    // counterの減算
+    counter--;
+  }
+}
+/**********************************
+ * ログファイルのオープン
+ **********************************/
 void openLogFile(){
   int lastNumber=0;
   const uint8_t BASE_NAME_SIZE = sizeof(FILE_BASE_NAME) - 1;
@@ -683,81 +519,197 @@ void openLogFile(){
   }
   file.flush();
 }
-// ログファイルの数のチェック
-int searchLogFile(){
-  const uint8_t BASE_NAME_SIZE = sizeof(FILE_BASE_NAME) - 1;
+#endif /* USE_SD */
+
+/**********************************
+ * 電源起動時とリセットの時だけのみ処理される関数(初期化と設定処理)
+ **********************************/
+void setup()
+{
+  int ans ;
+  byte tm[7] ;
+  int configFlag=0;
+  unsigned long currentTime;
+  Serial.begin(9600) ;                    // シリアル通信の初期化
+  Wire.begin();
+#ifdef ARDUINO_SLEEP
+#ifdef AVR
+  pinMode(XBEE_ON_PIN, INPUT);    // Xbeeからの割り込みの受信設定
+  attachInterrupt(XBEE_ON_INT, InterXbee, RISING);
+#endif /* AVR */
+
+#endif /* ARDUINO_SLEEP */
+#ifdef USE_XBEE_ASSOC
+  pinMode(XBEE_ASSOCIATE, INPUT); // Xbeeがネットワークにつながっているか否かを示すピン
+  pinMode(XBEE_RSSI,INPUT); // Xbeeの電波強度
+#endif /* USE_XBEE_ASSOC */
+
+
+  setupSensor();
+
+  ans = skRTC.begin(0,0,NULL,12,1,10,2,15,30,0) ;  // 2012/01/10 火 15:30:00 でRTCを初期化するが，割り込みは設定しない
+#ifdef DEBUG
+  if (ans == 0) {
+    Serial.println(F("Successful initialization of the RTC")) ;// 初期化成功
+  } else {
+    Serial.print(F("Failed initialization of the RTC ans=")) ; // 初期化失敗
+    Serial.println(ans) ;
+    reboot() ;                         // 処理中断
+  }
+#else /* DEBUG */
+  if (ans != 0) {
+    Serial.print(F("Failed initialization of the RTC"));
+    reboot();
+  }
+#endif /* DEBUG */
+#ifdef USE_SD
+  if (!sd.begin(SD_CHIP_SELECT, SDCARD_SPEED)) {
+    Serial.println(F("Failed initialization of SD card")) ; // 初期化失敗
+    delay(MAX_SLEEP);
+    sd.initErrorHalt();
+  }
   char fileName[13] = FILE_BASE_NAME "00.txt";
-  int lastFileNumber=0;
-  // ログファイルのうち，番号が一番大きい物を探し，lastFileNumberに番号を代入
-  while (sd.exists(fileName)) {
-    if (fileName[BASE_NAME_SIZE + 1] != '9') {
-      fileName[BASE_NAME_SIZE + 1]++;
-    } else if (fileName[BASE_NAME_SIZE] != '9') {
-      fileName[BASE_NAME_SIZE + 1] = '0';
-      fileName[BASE_NAME_SIZE]++;
-    } else {
+  openLogFile();
+  
 #ifdef DEBUG
-      Serial.print("lastFileNumber = ");
-      Serial.println(lastFileNumber);
+  Serial.print(F("Logging to: "));
+  Serial.println(fileName);
+#endif /* DEBUG */
+#endif /* USE_SD */
+#ifdef SERIAL_COM
+#ifdef AVR
+  serialCom.begin(9600);
+#endif /* AVR */
+#ifdef GR_KURUMI
+  Serial2.begin(9600);
+#endif /* GR_KURUMI */
 #endif
-      return(100);
+  skRTC.rTime(tm) ;                        // RTCから現在の日付と時刻を読込む
+  char tbuff[TIME_BUFF_MAX] ;
+  skRTC.cTime(tm,(byte *)tbuff) ;             // 日付と時刻を文字列に変換する
+  setTime(skRTC.bcd2bin(tm[2]),skRTC.bcd2bin(tm[1]),skRTC.bcd2bin(tm[0]),skRTC.bcd2bin(tm[3]),skRTC.bcd2bin(tm[5]),skRTC.bcd2bin(tm[6]));
+  bootTime=now();
+  Serial.print(F("Current system time : "));
+  Serial.println(tbuff) ;                   // シリアルモニターに表示
+  Serial.println(F("Hit any key to configure RTC.")) ;
+  while(configFlag==0) {
+    currentTime=now();
+    if ((currentTime - bootTime) > COMMAND_TIMER_THRESHOLD) {
+      configFlag=1;
     }
-    lastFileNumber++;
-  }
-#ifdef DEBUG
-  Serial.print("lastFileNumber = ");
-  Serial.println(lastFileNumber);
-#endif
-  return(lastFileNumber);
-}
-// logローテーション
-void logRotation(int num){
-  const uint8_t BASE_NAME_SIZE = sizeof(FILE_BASE_NAME) - 1;
-  char srcfileName[13] = FILE_BASE_NAME "00.txt";
-  char dstfileName[13] = FILE_BASE_NAME "00.txt";
-  char eraseFileName[13] = FILE_BASE_NAME "99.txt";
-  int counter=num;
-  int src1Num,src2Num,dst1Num,dst2Num;
-#ifdef DEBUG
-  Serial.print("logRotation(num); num = ");
-  Serial.println(num);
-#endif
-  if (counter==0) {
-#ifdef DEBUG
-    Serial.println(" do nothing");
-#endif
-    return;
-  } else if (counter==100) {
-#ifdef DEBUG
-    Serial.println("remove oldest file");
-#endif
-    sd.remove(eraseFileName);
-    counter--;
-  }
-#ifdef DEBUG
-  Serial.println("log rotation");
-#endif
-  while (counter>0) {
-    dst1Num=counter%10;
-    dst2Num=int(counter/10);
-    src1Num=(counter-1)%10;
-    src2Num=int((counter-1)/10);
-    //ファイル名の作成
-    srcfileName[BASE_NAME_SIZE + 1]=0x30 + src1Num;
-    srcfileName[BASE_NAME_SIZE    ]=0x30 + src2Num;
-    dstfileName[BASE_NAME_SIZE + 1]=0x30 + dst1Num;
-    dstfileName[BASE_NAME_SIZE    ]=0x30 + dst2Num;
-#ifdef DEBUG
-    Serial.print("src file name = ");
-    Serial.println(srcfileName);
-    Serial.print("dst file name = ");
-    Serial.println(dstfileName);
-#endif
-    // counter-1のファイルをcounterのファイルにrename
-    sd.rename(srcfileName,dstfileName);
-    // counterの減算
-    counter--;
+    if (Serial.available()) {
+      configFlag=2;
+      int data=Serial.read();
+      shell();
+    }
   }
 }
 
+/**********************************
+ * 本来の仕事
+ **********************************/
+void doWork(){
+  byte tm[7] ; 
+  char tbuff[TIME_BUFF_MAX] ;
+  char buff[BUFF_MAX];
+  char sensorVal[BUFF_MAX];
+  skRTC.rTime(tm);
+  skRTC.cTime(tm,(byte *)tbuff);
+  getSensorValue(sensorVal);
+  sprintf(buff,"%s : %s",tbuff,sensorVal);
+  //sprintf(buff,"%s : Hello World!",tbuff);
+#if defined(DEBUG) || defined(MIN_LOG)
+  Serial.println(buff);
+#endif /* DEBUG || MIN_LOG */
+#ifdef SERIAL_COM
+#ifdef USE_XBEE_ASSOC
+  int associate = digitalRead(XBEE_ASSOCIATE);
+  //unsigned long rssi = pulseIn(XBEE_RSSI,LOW,100000UL);
+  if (1==associate) {
+#ifdef AVR
+    serialCom.println(buff);
+#endif /* AVR */
+#ifdef GR_KURUMI
+    Serial2.println(buff);
+#endif /* GR_KURUMI */
+  }
+#else /* USE_XBEE_ASSOC */
+#ifdef AVR
+  serialCom.println(buff);
+#endif /* AVR */
+#ifdef GR_KURUMI
+  Serial2.println(buff);
+#endif /* GR_KURUMI */
+#endif /* USE_XBEE_ASSOC */
+#endif /* SERIAL_COM */
+
+#ifdef USE_SD
+  sd.begin(SD_CHIP_SELECT, SDCARD_SPEED);
+#ifdef DEBUG
+  Serial.println("write to SD");
+#endif /* DEBUG */
+  file.println(buff);
+#ifdef DEBUG
+  Serial.println("flush SD");
+#endif /* DEBUG */
+  file.flush();
+#ifdef DEBUG
+  Serial.println("done!");
+#endif /* DEBUG */
+#endif /* USE_SD */
+}
+
+/**********************************
+ * 繰り返し実行される処理の関数(メインの処理)
+ **********************************/
+void loop()
+{
+  byte tm[7] ; 
+  //char tbuff[TIME_BUFF_MAX] ;
+
+#ifdef RESET
+  if ((1==hour())&&(REBOOT_THRESHOLD < (now() - bootTime))){ // 稼働時間が1時間以上で，夜中一時だったらリブート
+#ifdef DEBUG
+    Serial.println(F("reboot"));
+#endif /* DEBUG */
+    reboot();
+  }
+#endif /* RESET */
+#ifdef ARDUINO_SLEEP
+#ifdef DEBUG
+  Serial.println("sleep !");
+  Serial.flush();
+#endif /* DEBUG */
+#ifdef AVR
+  goodNight(STANDBY_MODE);// 端末を眠らせる
+#endif /* AVR */
+#ifdef GR_KURUMI
+  goodNight(0);// 端末を眠らせる (引数はKurumiの場合，使用しないので適当な数を入れる)
+#endif /* GR_KURUMI */
+#else /* ARDUINO_SLEEP */
+  delay(5000);
+#endif /* ARDUINO_SLEEP */
+#if defined(ARDUINO_SLEEP) && defined(AVR)
+#ifdef DEBUG
+  Serial.println("Wake up!");
+#endif /* DEBUG */
+  if (xbeeInter) {
+    xbeeInter = false;
+#ifdef DEBUG
+    Serial.println(F("Interupt and wake up!"));
+#endif /* DEBUG */
+    skRTC.rTime(tm) ;
+    setTime(skRTC.bcd2bin(tm[2]),skRTC.bcd2bin(tm[1]),skRTC.bcd2bin(tm[0]),skRTC.bcd2bin(tm[3]),skRTC.bcd2bin(tm[5]),skRTC.bcd2bin(tm[6]));
+    doWork();
+  }
+#else /* ARDUINO_SLEEP && AVR */
+#ifdef DEBUG
+  Serial.println(F("do work!"));
+#endif /* DEBUG */
+  skRTC.rTime(tm) ;
+  setTime(skRTC.bcd2bin(tm[2]),skRTC.bcd2bin(tm[1]),skRTC.bcd2bin(tm[0]),skRTC.bcd2bin(tm[3]),skRTC.bcd2bin(tm[5]),skRTC.bcd2bin(tm[6]));
+  doWork();
+  delay(XBEE_DELAY);
+#endif /* ARDUINO_SLEEP */
+}
 
