@@ -23,7 +23,7 @@
 #define ARDUINO_SLEEP      // 待機中は低電力状態に設定
 #define SERIAL_COM         // センサ処理の結果をシリアルで外部に出力
 #define USE_SD             // センサ処理の結果をSDカードに保存する
-#define USE_XBEE_ASSOC     // Xbeeの電波強度等を調べる機能のON/OFF
+//#define USE_XBEE_ASSOC     // Xbeeの電波強度等を調べる機能のON/OFF
 
  /**********************************
  * 接続するピン関係の番号の設定
@@ -43,9 +43,9 @@
 //#define XBEE_ON_PIN 3        // Xbeeを使う場合のXbeeのON/SLEEP端子の指定 (Arduino用)
 //#define XBEE_ON_INT 1        // Xbeeから起こされる場合の割り込み番号 (Arduino用)
 #define XBEE_ASSOCIATE 3     // Xbeeがネットに接続されているか否かを示すピン
-#define XBEE_RSSI 4          // Xbeeの電波の受信強度
+#define XBEE_RSSI 5          // Xbeeの電波の受信強度
 
-#define DHT_PIN 5            // DHTシリーズの温湿度センサを接続するピン番号
+#define DHT_PIN 4            // DHTシリーズの温湿度センサを接続するピン番号
 /***********************************************************************************
   Arduinoの割り込み番号と対応するピン番号
 ---------+-----------------------------+
