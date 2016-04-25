@@ -222,8 +222,10 @@ void doWork(){
 #endif /* USE_SD */
 #ifdef SERIAL_OUT
   serialCom.println(buff);
+  serialCom.flush();
 #ifdef DEBUG
   Serial.println(buff);
+  Serial.flush();
 #endif /* DEBUG */
 #endif /* SERIAL_OUT */
 }

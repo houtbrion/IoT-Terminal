@@ -39,6 +39,8 @@
 
 /* リレーの制御ピン */
 #define RELAY_SIGNAL 6
+// ASSOC 7
+//RSSI 8
 
 /* RTCの割り込みに利用するピンと割り込み番号の指定
   Arduinoの割り込み番号と対応するピン番号
@@ -225,9 +227,11 @@ bool doWork(){
       String processResult = serialCom.readStringUntil(TERMINATE_CHAR);
 #ifdef DEBUG
       Serial.println(processResult);
+      Serial.flush();
 #endif /* DEBUG */
 #ifdef SERIAL_UPLOAD
       serialUpload.println(processResult);
+      serialUpload.flush();
 #endif /* SERIAL_UPLOAD */
       configFlag=2;
     }

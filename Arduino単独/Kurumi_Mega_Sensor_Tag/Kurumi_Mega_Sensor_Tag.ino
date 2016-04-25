@@ -29,21 +29,35 @@
  /**********************************
  * 接続するピン関係の番号の設定
  **********************************/
- 
+
+#ifdef AVR
 #define SD_CHIP_SELECT 8     // sparcfunのマイクロSDシールドのチップセレクト用のピンは8番ピン
+#endif /* AVR */
+#ifdef GR_KURUMI
+#define SD_CHIP_SELECT 6
+#endif /* GR_KURUMI */
 
-#define SERIAL_COM_RX 5      // GR-kurumiの場合，Serial2を使うため，ピン番号の指定は不要
-#define SERIAL_COM_TX 6
+#ifdef AVR
+#define SERIAL_COM_RX 10      // GR-kurumiの場合，Serial2(9,10)を使うため，ピン番号の指定は不要
+#define SERIAL_COM_TX 9
+#endif /* AVR */
 
-#define INT_PIN_NUMBER 2
-#define INT_NUMBER 0
+//#define INT_PIN_NUMBER 2
+//#define INT_NUMBER 0
+#define INT_PIN_NUMBER 19
+#define INT_NUMBER 2
 
 //#define XBEE_ON_PIN A0       // Xbeeを使う場合のXbeeのON/SLEEP端子の指定 (GR-kurumi用)
 #define XBEE_ON_PIN 3        // Xbeeを使う場合のXbeeのON/SLEEP端子の指定 (Arduino用)
 #define XBEE_ON_INT 1        // Xbeeから起こされる場合の割り込み番号 (Arduino用)
 #define XBEE_ASSOCIATE 3     // Xbeeがネットに接続されているか否かを示すピン
 #define XBEE_RSSI 7          // Xbeeの電波の受信強度
+#ifdef AVR
 #define XBEE_SLEEP_PIN 9
+#endif /* AVR */
+#ifdef GR_KURUMI
+#define XBEE_SLEEP_PIN 5
+#endif /* GR_KURUMI */
 
 #define DHT_PIN 4            // DHTシリーズの温湿度センサを接続するピン番号
 /***********************************************************************************
@@ -647,31 +661,6 @@ void doWork(){
   getSensorValue(sensorVal);
   sprintf(buff,"%s : %s",tbuff,sensorVal);
   //sprintf(buff,"%s : Hello World!",tbuff);
-#if defined(DEBUG) || defined(MIN_LOG)
-  Serial.println(buff);
-#endif /* DEBUG || MIN_LOG */
-#ifdef SERIAL_COM
-#ifdef USE_XBEE_ASSOC
-  int associate = digitalRead(XBEE_ASSOCIATE);
-  //unsigned long rssi = pulseIn(XBEE_RSSI,LOW,100000UL);
-  if (1==associate) {
-#ifdef AVR
-    serialCom.println(buff);
-#endif /* AVR */
-#ifdef GR_KURUMI
-    Serial2.println(buff);
-#endif /* GR_KURUMI */
-  }
-#else /* USE_XBEE_ASSOC */
-#ifdef AVR
-  serialCom.println(buff);
-#endif /* AVR */
-#ifdef GR_KURUMI
-  Serial2.println(buff);
-#endif /* GR_KURUMI */
-#endif /* USE_XBEE_ASSOC */
-#endif /* SERIAL_COM */
-
 #ifdef USE_SD
   sd.begin(SD_CHIP_SELECT, SDCARD_SPEED);
 #ifdef DEBUG
@@ -686,6 +675,37 @@ void doWork(){
   Serial.println("done!");
 #endif /* DEBUG */
 #endif /* USE_SD */
+#if defined(DEBUG) || defined(MIN_LOG)
+  Serial.println(buff);
+  Serial.flush();
+#endif /* DEBUG || MIN_LOG */
+#ifdef SERIAL_COM
+#ifdef USE_XBEE_ASSOC
+  int associate = digitalRead(XBEE_ASSOCIATE);
+  //unsigned long rssi = pulseIn(XBEE_RSSI,LOW,100000UL);
+  if (1==associate) {
+#ifdef AVR
+    serialCom.println(buff);
+    serialCom.flush();
+#endif /* AVR */
+#ifdef GR_KURUMI
+    Serial2.println(buff);
+    Serial2.flush();
+#endif /* GR_KURUMI */
+  }
+#else /* USE_XBEE_ASSOC */
+#ifdef AVR
+  serialCom.println(buff);
+  serialCom.flush();
+#endif /* AVR */
+#ifdef GR_KURUMI
+  Serial2.println(buff);
+  Serial2.flush();
+#endif /* GR_KURUMI */
+#endif /* USE_XBEE_ASSOC */
+#endif /* SERIAL_COM */
+
+
 }
 
 /**********************************
