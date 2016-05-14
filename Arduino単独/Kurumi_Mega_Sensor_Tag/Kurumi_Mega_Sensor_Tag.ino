@@ -21,7 +21,7 @@
 #define MIN_LOG            // 動作ログのうち，最小限度のものだけを出力
 #define RESET              // 夜中に再起動
 //#define ARDUINO_SLEEP_XBEE // 待機中は低電力状態に設定し，Xbeeに起こしてもらう
-//#define ARDUINO_SLEEP_RTC  // 待機中は低電力状態に設定し，RTCに起こしてもらう
+#define ARDUINO_SLEEP_RTC  // 待機中は低電力状態に設定し，RTCに起こしてもらう
 #define SERIAL_COM         // センサ処理の結果をシリアルで外部に出力
 #define USE_SD             // センサ処理の結果をSDカードに保存する
 //#define USE_XBEE_ASSOC     // Xbeeの電波強度等を調べる機能のON/OFF
@@ -44,16 +44,16 @@
 
 //#define INT_PIN_NUMBER 2
 //#define INT_NUMBER 0
-#define INT_PIN_NUMBER 19
-#define INT_NUMBER 2
+#define INT_PIN_NUMBER 18
+#define INT_NUMBER digitalPinToInterrupt(INT_PIN_NUMBER)
 
 //#define XBEE_ON_PIN A0       // Xbeeを使う場合のXbeeのON/SLEEP端子の指定 (GR-kurumi用)
-#define XBEE_ON_PIN 3        // Xbeeを使う場合のXbeeのON/SLEEP端子の指定 (Arduino用)
-#define XBEE_ON_INT 1        // Xbeeから起こされる場合の割り込み番号 (Arduino用)
+#define XBEE_ON_PIN 19        // Xbeeを使う場合のXbeeのON/SLEEP端子の指定 (Arduino用)
+#define XBEE_ON_INT digitalPinToInterrupt(XBEE_ON_PIN)        // Xbeeから起こされる場合の割り込み番号 (Arduino用)
 #define XBEE_ASSOCIATE 3     // Xbeeがネットに接続されているか否かを示すピン
 #define XBEE_RSSI 7          // Xbeeの電波の受信強度
 #ifdef AVR
-#define XBEE_SLEEP_PIN 9
+#define XBEE_SLEEP_PIN 6
 #endif /* AVR */
 #ifdef GR_KURUMI
 #define XBEE_SLEEP_PIN 5
