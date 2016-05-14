@@ -7,11 +7,11 @@
 *  機能のON/OFFなど
 *******************************************************************************/
 #define DEBUG                // デバッグメッセージをコンソールに出力するか否か
-#define STARTUP_LED          // 起動時にLEDを明滅させるか否か
+//#define STARTUP_LED          // 起動時にLEDを明滅させるか否か
 #define SERIAL_OUT           // 処理結果をシリアルでリレーサーバに出力するか否か
 //#define SHUTDOWN             // シリアルサーバに処理終了の信号を出すか否か(シリアル出力しない場合)
 #define USE_RTC_8564NB       // RTCで現在時刻を測定するか否かと利用するRTCの種類の指定
-#define USE_SD              // 処理結果をSDに保存するか否か
+//#define USE_SD              // 処理結果をSDに保存するか否か UNOだとメモリ不足で使えない．
 
 /*******************************************************************************
 *  ピン番号の指定
@@ -27,8 +27,8 @@
 #define SD_LED_PIN 5
 
 /* 使わなくても，定義しておかないとRTCをセットアップできないのでやむを得ず定義しておく */
-#define RTC_PIN_NUMBER 2   // RTCから割り込みを受ける場合のピン番号の指定
-#define INT_NUMBER 0       // RTCの割り込み番号の指定
+#define RTC_PIN_NUMBER 18   // RTCから割り込みを受ける場合のピン番号の指定
+#define INT_NUMBER digitalPinToInterrupt(RTC_PIN_NUMBER)       // RTCの割り込み番号の指定
 
 /* 温度・湿度センサの接続先ピン(センサ処理の例のため) */
 #define DHT_PIN 4            // DHTシリーズの温湿度センサを接続するピン番号
@@ -48,6 +48,7 @@
 *    ・今回使うのはDHTシリーズセンサ用ライブラリのうち，https://github.com/markruys/arduino-DHT
 *******************************************************************************/
 /* 定数やオブジェクトの定義 */
+#define AVR
 #define DHT_SENSOR  // 温度湿度センサを用いるか否かの指定
 #define MAX_RETRY 5 // センサからデータが正常に読めなかった場合に，リトライする回数の指定
 
@@ -170,6 +171,7 @@ void setup() {
 #endif /* DEBUG */
 #endif /* USE_RTC_8564NB */
 #ifdef USE_SD
+  //if (!sd.cardBegin(SD_CHIP_SELECT, SPI_HALF_SPEED)) {
   if (!sd.begin(SD_CHIP_SELECT, SDCARD_SPEED)) {
 #ifdef DEBUG
     Serial.println("Failed initialization of SD card") ; // 初期化失敗

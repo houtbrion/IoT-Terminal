@@ -13,7 +13,7 @@
 *  機能のON/OFFなど
 *******************************************************************************/
 #define DEBUG         // 各種メッセージのON/OFF
-#define RESET         // リレーをONした場合に，アプリケーションプロセッサにリセットをかけるか否か
+//#define RESET         // リレーをONした場合に，アプリケーションプロセッサにリセットをかけるか否か
 #define ARDUINO_SLEEP // 自分はスリープするか否か
 #define SERIAL_COM    // アプリケーションプロセッサから処理結果を受け取るか否か
 #define SERIAL_UPLOAD // アプリプロセッサの処理結果をXbeeに送信させるか否か
@@ -62,9 +62,8 @@ Pro miniは，UNOと同じ
 */
 
 /* PRO_MINIはUNOと同じ */
-#define INT_NUMBER 0
-#define INT_PIN_NUMBER 2 // 割り込み番号
-
+#define INT_PIN_NUMBER 2 // 割り込みに用いるピン番号
+#define INT_NUMBER digitalPinToInterrupt(INT_PIN_NUMBER)
 /*******************************************************************************
 *  定数の指定
 *******************************************************************************/
@@ -79,7 +78,7 @@ Pro miniは，UNOと同じ
 #define STANDBY_MODE SLEEP_MODE_PWR_DOWN
 
 /* 端末が眠る期間の指定 */
-#define SLEEP_DURATION 45 //単位の倍数
+#define SLEEP_DURATION 25 //単位の倍数
 //#define SLEEP_UNIT 0 // 244.14us単位
 //#define SLEEP_UNIT 1 //15.625ms単位
 #define SLEEP_UNIT 2 //秒単位
@@ -95,8 +94,8 @@ Pro miniは，UNOと同じ
 /* 改行文字の定義と処理結果の文字列の最終文字の指定 */
 #define LINE_FEED 0x0a            // ラインフィードのアスキーコード
 #define CR 0x0d                   // キャリッジリターンのアスキーコード
-#define TERMINATE_CHAR  CR        // 最終文字はキャリッジリターン
-//#define TERMINATE_CHAR LINE_FEED  //最終文字はラインフィード
+//#define TERMINATE_CHAR  CR        // 最終文字はキャリッジリターン
+#define TERMINATE_CHAR LINE_FEED  //最終文字はラインフィード
 
 /*******************************************************************************
 *  ここからプログラム本体
