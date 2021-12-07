@@ -1,7 +1,7 @@
 
 //#define USE_DHCP                 // IPアドレスをDHCPで行う (コメントアウトした場合は固定IP)
 //#define USE_NTP                  // NTPで時刻を合わせる場合
-//#define USE_RTC                  // RTCを使うか否か
+#define USE_RTC                  // RTCを使うか否か
 //#define USE_SOFT_SERIAL          // センサデータ出力先にソフトウェアシリアルを使う
 //#define USE_SD                   // SDカードにセンサのログを書き込む場合
 #define USE_HARD_SERIAL          // センサデータ出力先にハードウェアシリアルの1番(Serial)を使う
@@ -13,8 +13,10 @@
 #include "AusExOutputPlugin.h"
 #include "AusExAM232X.h"
 
-#define SSID_STR "houtbrion"
-#define WIFI_PASS "houtbrionhome"
+#include "arduinoHardwareHelper.h"
+
+#define SSID_STR "foo"
+#define WIFI_PASS "bar"
 
 #ifdef USE_SOFT_SERIAL
 #include <SoftwareSerial.h>
@@ -55,7 +57,11 @@
 
 
 #ifdef USE_NTP
+#if defined(ARDUINO_AVR_UNO_WIFI_DEV_ED) || defined(ARDUINO_SAMD_NANO_33_IOT) || defined(ARDUINO_SAMD_MKRWIFI1010) || defined(ARDUINO_SAMD_MKRVIDOR4000)
+#include <WiFiNINA.h>
+#else
 #include <WiFi.h>
+#endif
 #include <WiFiUdp.h>
 #include <NTPClient.h>
 
@@ -101,11 +107,14 @@ AusExAM232X am232x = AusExAM232X(&Wire, AM2321);
 
 OutputChannel channel;
 
+HardwareHelper helper;
+
 //
 // 本体をリセットする関数
 //
 void reboot() {
-  ESP.restart();
+  //ESP.restart();
+  helper.SoftwareReset();
 }
 
 #ifdef USE_SD
@@ -226,8 +235,11 @@ void setup() {
 
   outputDevice.SetIO(AUSEX_OUTPUT_CHANNEL, channel, FORMAT_TYPE_SYSLOG);
   outputDevice.SetLogParam(HOSTNAME, APP_NAME);
+
+#if CPU_TYPE==TYPE_ESP32
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
   Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) + " Seconds");
+#endif /* CPU_TYPE == TYPE_ESP32 */
   delay(WAIT_TIME);
 }
 
@@ -274,5 +286,9 @@ void loop() {
 #endif /* USE_SOFT_SERIAL */
 
   Serial.flush();
+#if CPU_TYPE==TYPE_ESP32
   esp_deep_sleep_start();
+#else /* CPU_TYPE == TYPE_ESP32 */
+  delay(TIME_TO_SLEEP*1000);
+#endif /* CPU_TYPE == TYPE_ESP32 */
 }
