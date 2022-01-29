@@ -116,7 +116,7 @@ void setup() {
   }
 #endif /* USE_RTC */
 
-  rtc_date_t dateTime;
+  date_t dateTime;
 
   // MACアドレスとIPアドレスの設定
   // 参考URL http://arduino.cc/en/Reference/EthernetBegin
@@ -200,7 +200,7 @@ void loop() {
           currentTime = timeClient.getEpochTime();
 #endif /* USE_NTP */
 #ifdef USE_RTC
-          rtc_date_t dateTime;
+          date_t dateTime;
           rtc.getTime(&dateTime);
           currentTime = rtc.convertDateToEpoch(dateTime);
 #endif /* USE_RTC */

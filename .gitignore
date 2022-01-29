@@ -31,3 +31,6 @@
 *~
 *.swp
 
+beacon/AusExAM232x_esp32_beacon/新しいテキスト ドキュメント.txt
+webserver/sensor/AusExAM232X_WiFi_WebServer/新しいテキスト ドキュメント.txt
+webserver/sensor/AusExDHT_Ether_WebServer/新しいテキスト ドキュメント.txt

@@ -185,7 +185,7 @@ void setup() {
   }
 #endif /* USE_RTC */
 
-  rtc_date_t dateTime;
+  date_t dateTime;
 
 #ifdef USE_NTP
   // MACアドレスとIPアドレスの設定
@@ -239,7 +239,7 @@ void loop() {
   currentTime = timeClient.getEpochTime();
 #endif /* USE_NTP */
 #ifdef USE_RTC
-  rtc_date_t dateTime;
+  date_t dateTime;
   rtc.getTime(&dateTime);
   currentTime = rtc.convertDateToEpoch(dateTime);
 #endif /* USE_RTC */
